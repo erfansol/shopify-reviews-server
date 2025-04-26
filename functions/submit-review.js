@@ -1,20 +1,21 @@
-const fetch = require('node-fetch'); // Fetch is built-in on Netlify
-
 exports.handler = async (event, context) => {
-  if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, body: 'Method Not Allowed' };
-  }
-
-  const { productId, name, text, stars } = JSON.parse(event.body);
-
-  if (!productId || !name || !text || !stars) {
-    return { statusCode: 400, body: 'Missing required fields' };
-  }
-
-  const ADMIN_API_ACCESS_TOKEN = process.env.ADMIN_API_ACCESS_TOKEN;
-  const SHOP = process.env.SHOP;
-
   try {
+    // Dynamically import node-fetch to avoid the "require() of ES Module" error
+    const { default: fetch } = await import('node-fetch');
+
+    if (event.httpMethod !== 'POST') {
+      return { statusCode: 405, body: 'Method Not Allowed' };
+    }
+
+    const { productId, name, text, stars } = JSON.parse(event.body);
+
+    if (!productId || !name || !text || !stars) {
+      return { statusCode: 400, body: 'Missing required fields' };
+    }
+
+    const ADMIN_API_ACCESS_TOKEN = process.env.ADMIN_API_ACCESS_TOKEN;
+    const SHOP = process.env.SHOP;
+
     const queryGet = `
       {
         product(id: "gid://shopify/Product/${productId}") {
@@ -93,6 +94,7 @@ exports.handler = async (event, context) => {
     };
 
   } catch (error) {
+    console.error('Error submitting review:', error);
     return {
       statusCode: 500,
       body: JSON.stringify({ error: error.message })
