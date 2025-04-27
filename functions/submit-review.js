@@ -189,3 +189,7 @@ async function updateReviews(productId, reviews, shop, token) {
 
   return response.json();
 }
+const SHOPIFY_API_KEY = process.env.SHOPIFY_API_KEY;
+const SHOPIFY_API_SECRET_KEY = process.env.SHOPIFY_API_SECRET_KEY;
+const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN;
+const SHOP = process.env.SHOP;
