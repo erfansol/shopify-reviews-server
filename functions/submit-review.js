@@ -1,120 +1,115 @@
-import fetch from 'node-fetch';
+// netlify/functions/submit-review.js
+const allowedOrigin = 'https://mamamary.io'; // Your Shopify store's origin
+const shopifyApiVersion = '2024-10'; // Updated to a more recent version (adjust if needed)
 
-const allowedOrigin = 'https://mamamary.io'; // Change to your domain
-const shopifyApiVersion = '2023-10';
+exports.handler = async (event) => {
+  // CORS headers for all responses
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+  };
 
-export const handler = async (event) => {
-  // Handle CORS preflight
+  // Handle CORS preflight request (OPTIONS)
   if (event.httpMethod === 'OPTIONS') {
     return {
       statusCode: 204,
-      headers: {
-        ...corsHeaders(),
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-      },
+      headers: corsHeaders,
       body: '',
     };
   }
 
-  // Allow only POST
+  // Allow only POST requests
   if (event.httpMethod !== 'POST') {
     return {
       statusCode: 405,
-      headers: corsHeaders(),
+      headers: corsHeaders,
       body: JSON.stringify({ error: 'Method Not Allowed' }),
     };
   }
 
+  // Parse request body
   let payload;
   try {
     payload = JSON.parse(event.body);
-  } catch (err) {
+  } catch (error) {
     return {
       statusCode: 400,
-      headers: corsHeaders(),
-      body: JSON.stringify({ error: 'Invalid JSON body' }),
+      headers: corsHeaders,
+      body: JSON.stringify({ error: 'Invalid JSON body', details: error.message }),
     };
   }
 
   const { productId, name, text, stars } = payload;
 
+  // Validate required fields
   if (!productId || !name || !text || !stars) {
     return {
       statusCode: 400,
-      headers: corsHeaders(),
+      headers: corsHeaders,
       body: JSON.stringify({ error: 'Missing required fields' }),
     };
   }
 
-  const ADMIN_API_ACCESS_TOKEN = process.env.ADMIN_API_ACCESS_TOKEN;
-  const SHOP = process.env.SHOP;
+  // Validate environment variables
+  const adminApiAccessToken = process.env.ADMIN_API_ACCESS_TOKEN;
+  const shop = process.env.SHOP;
 
-  if (!ADMIN_API_ACCESS_TOKEN || !SHOP) {
+  if (!adminApiAccessToken || !shop) {
     return {
       statusCode: 500,
-      headers: corsHeaders(),
-      body: JSON.stringify({ error: 'Server misconfiguration' }),
+      headers: corsHeaders,
+      body: JSON.stringify({ error: 'Server misconfiguration: Missing environment variables' }),
     };
   }
 
   try {
-    // Fetch existing reviews from the Shopify product metafield
-    const existingReviews = await fetchReviews(productId, SHOP, ADMIN_API_ACCESS_TOKEN);
+    // Fetch existing reviews
+    const existingReviews = await fetchReviews(productId, shop, adminApiAccessToken);
 
+    // Append new review
     const updatedReviews = [
       ...(existingReviews || []),
       {
         name,
         text,
-        stars,
-        status: 'pending', // You can change this status based on your review approval flow
+        stars: parseInt(stars, 10), // Ensure stars is a number
+        status: 'pending',
         date: new Date().toISOString(),
       },
     ];
 
-    // Update reviews in the Shopify metafield
-    const updateResult = await updateReviews(productId, updatedReviews, SHOP, ADMIN_API_ACCESS_TOKEN);
+    // Update reviews in Shopify metafield
+    const updateResult = await updateReviews(productId, updatedReviews, shop, adminApiAccessToken);
 
-    if (updateResult.errors && updateResult.errors.length > 0) {
+    // Check for Shopify GraphQL user errors
+    if (updateResult?.data?.metafieldUpsert?.userErrors?.length > 0) {
       return {
         statusCode: 500,
-        headers: corsHeaders(),
-        body: JSON.stringify({ error: updateResult.errors }),
+        headers: corsHeaders,
+        body: JSON.stringify({ error: 'Failed to update reviews', details: updateResult.data.metafieldUpsert.userErrors }),
       };
     }
 
     return {
       statusCode: 200,
-      headers: corsHeaders(),
+      headers: corsHeaders,
       body: JSON.stringify({ message: 'Review submitted successfully' }),
     };
-
   } catch (error) {
-    console.error('Error occurred:', error);  // Log the error for debugging
+    console.error('Error submitting review:', error);
     return {
       statusCode: 500,
-      headers: corsHeaders(),
-      body: JSON.stringify({ error: 'An unexpected error occurred' }),
+      headers: corsHeaders,
+      body: JSON.stringify({ error: 'An unexpected error occurred', details: error.message }),
     };
   }
 };
 
-// --- Helper Functions ---
-
-// CORS headers function
-function corsHeaders() {
-  return {
-    'Access-Control-Allow-Origin': allowedOrigin, // Make sure this is set to the correct allowed origin
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
-  };
-}
-
-// Fetch existing reviews for the given productId
+// Fetch existing reviews from Shopify product metafield
 async function fetchReviews(productId, shop, token) {
   const query = `
-    {
+    query {
       product(id: "gid://shopify/Product/${productId}") {
         metafield(namespace: "custom", key: "reviews") {
           id
@@ -134,17 +129,16 @@ async function fetchReviews(productId, shop, token) {
   });
 
   if (!response.ok) {
-    throw new Error('Failed to fetch existing reviews');
+    throw new Error(`Failed to fetch reviews: ${response.status} ${response.statusText}`);
   }
 
   const data = await response.json();
   const metafield = data?.data?.product?.metafield;
 
-  if (!metafield) return [];  // Return an empty array if no metafield is found
-  return JSON.parse(metafield.value || '[]');
+  return metafield?.value ? JSON.parse(metafield.value) : [];
 }
 
-// Update the reviews for the product in the metafield
+// Update reviews in Shopify product metafield
 async function updateReviews(productId, reviews, shop, token) {
   const query = `
     mutation metafieldUpsert($input: MetafieldInput!) {
@@ -184,12 +178,8 @@ async function updateReviews(productId, reviews, shop, token) {
   });
 
   if (!response.ok) {
-    throw new Error('Failed to update reviews');
+    throw new Error(`Failed to update reviews: ${response.status} ${response.statusText}`);
   }
 
   return response.json();
 }
-const SHOPIFY_API_KEY = process.env.SHOPIFY_API_KEY;
-const SHOPIFY_API_SECRET_KEY = process.env.SHOPIFY_API_SECRET_KEY;
-const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN;
-const SHOP = process.env.SHOP;
