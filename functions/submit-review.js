@@ -98,15 +98,23 @@ exports.handler = async (event, context) => {
     console.log('Updating reviews:', updatedReviews);
     const updateResult = await updateReviews(productId, updatedReviews, shop, adminApiAccessToken);
 
-    console.log('Update result:', updateResult);
-    if (updateResult?.data?.metafieldUpsert?.userErrors?.length > 0) {
-      console.error('GraphQL user errors:', updateResult.data.metafieldUpsert.userErrors);
+    // Check for GraphQL errors or userErrors
+    if (updateResult.errors?.length > 0) {
+      console.error('GraphQL errors:', updateResult.errors);
+      return {
+        statusCode: 500,
+        headers: corsHeaders,
+        body: JSON.stringify({ error: 'Failed to update reviews', details: updateResult.errors }),
+      };
+    }
+    if (updateResult.data?.metafieldsSet?.userErrors?.length > 0) {
+      console.error('MetafieldsSet user errors:', updateResult.data.metafieldsSet.userErrors);
       return {
         statusCode: 500,
         headers: corsHeaders,
         body: JSON.stringify({
           error: 'Failed to update reviews',
-          details: updateResult.data.metafieldUpsert.userErrors,
+          details: updateResult.data.metafieldsSet.userErrors,
         }),
       };
     }
@@ -180,12 +188,12 @@ async function fetchReviews(productId, shop, token) {
   }
 }
 
-// Update reviews
+// Update reviews using metafieldsSet
 async function updateReviews(productId, reviews, shop, token) {
   const query = `
-    mutation metafieldUpsert($input: MetafieldInput!) {
-      metafieldUpsert(input: $input) {
-        metafield {
+    mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) {
+      metafieldsSet(metafields: $metafields) {
+        metafields {
           id
           namespace
           key
@@ -201,13 +209,15 @@ async function updateReviews(productId, reviews, shop, token) {
   `;
 
   const variables = {
-    input: {
-      namespace: 'custom',
-      key: 'reviews',
-      ownerId: `gid://shopify/Product/${productId}`,
-      type: 'json',
-      value: JSON.stringify(reviews),
-    },
+    metafields: [
+      {
+        namespace: 'custom',
+        key: 'reviews',
+        ownerId: `gid://shopify/Product/${productId}`,
+        type: 'json',
+        value: JSON.stringify(reviews),
+      },
+    ],
   };
 
   console.log('Updating reviews to:', `https://${shop}/admin/api/${shopifyApiVersion}/graphql.json`);
@@ -240,4 +250,4 @@ async function updateReviews(productId, reviews, shop, token) {
     });
     throw error;
   }
-};
+}
