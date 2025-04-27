@@ -55,21 +55,24 @@ export const handler = async (event) => {
   }
 
   try {
+    // Fetch existing reviews from the Shopify product metafield
     const existingReviews = await fetchReviews(productId, SHOP, ADMIN_API_ACCESS_TOKEN);
+
     const updatedReviews = [
       ...(existingReviews || []),
       {
         name,
         text,
         stars,
-        status: 'pending',
+        status: 'pending', // You can change this status based on your review approval flow
         date: new Date().toISOString(),
       },
     ];
 
+    // Update reviews in the Shopify metafield
     const updateResult = await updateReviews(productId, updatedReviews, SHOP, ADMIN_API_ACCESS_TOKEN);
 
-    if (updateResult.errors) {
+    if (updateResult.errors && updateResult.errors.length > 0) {
       return {
         statusCode: 500,
         headers: corsHeaders(),
@@ -84,16 +87,18 @@ export const handler = async (event) => {
     };
 
   } catch (error) {
+    console.error('Error occurred:', error);  // Log the error for debugging
     return {
       statusCode: 500,
       headers: corsHeaders(),
-      body: JSON.stringify({ error: error.message }),
+      body: JSON.stringify({ error: 'An unexpected error occurred' }),
     };
   }
 };
 
 // --- Helper Functions ---
 
+// CORS headers function
 function corsHeaders() {
   return {
     'Access-Control-Allow-Origin': allowedOrigin,
@@ -102,6 +107,7 @@ function corsHeaders() {
   };
 }
 
+// Fetch existing reviews for the given productId
 async function fetchReviews(productId, shop, token) {
   const query = `
     {
@@ -123,13 +129,18 @@ async function fetchReviews(productId, shop, token) {
     body: JSON.stringify({ query }),
   });
 
+  if (!response.ok) {
+    throw new Error('Failed to fetch existing reviews');
+  }
+
   const data = await response.json();
   const metafield = data?.data?.product?.metafield;
 
-  if (!metafield) return null;
+  if (!metafield) return [];  // Return an empty array if no metafield is found
   return JSON.parse(metafield.value || '[]');
 }
 
+// Update the reviews for the product in the metafield
 async function updateReviews(productId, reviews, shop, token) {
   const query = `
     mutation metafieldUpsert($input: MetafieldInput!) {
@@ -151,10 +162,10 @@ async function updateReviews(productId, reviews, shop, token) {
 
   const variables = {
     input: {
-      namespace: "custom",
-      key: "reviews",
+      namespace: 'custom',
+      key: 'reviews',
       ownerId: `gid://shopify/Product/${productId}`,
-      type: "json",
+      type: 'json',
       value: JSON.stringify(reviews),
     },
   };
@@ -167,6 +178,10 @@ async function updateReviews(productId, reviews, shop, token) {
     },
     body: JSON.stringify({ query, variables }),
   });
+
+  if (!response.ok) {
+    throw new Error('Failed to update reviews');
+  }
 
   return response.json();
 }
