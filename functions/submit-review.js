@@ -1,16 +1,14 @@
 // netlify/functions/submit-review.js
-const allowedOrigin = 'https://mamamary.io'; // Your Shopify store's origin
-const shopifyApiVersion = '2024-10'; // Updated to a more recent version (adjust if needed)
+const allowedOrigin = process.env.ALLOWED_ORIGIN || 'https://mamamary.io'; // Fallback to default
+const shopifyApiVersion = '2024-10'; // Adjust if needed
 
 exports.handler = async (event) => {
-  // CORS headers for all responses
   const corsHeaders = {
     'Access-Control-Allow-Origin': allowedOrigin,
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
   };
 
-  // Handle CORS preflight request (OPTIONS)
   if (event.httpMethod === 'OPTIONS') {
     return {
       statusCode: 204,
@@ -19,7 +17,6 @@ exports.handler = async (event) => {
     };
   }
 
-  // Allow only POST requests
   if (event.httpMethod !== 'POST') {
     return {
       statusCode: 405,
@@ -28,7 +25,6 @@ exports.handler = async (event) => {
     };
   }
 
-  // Parse request body
   let payload;
   try {
     payload = JSON.parse(event.body);
@@ -42,7 +38,6 @@ exports.handler = async (event) => {
 
   const { productId, name, text, stars } = payload;
 
-  // Validate required fields
   if (!productId || !name || !text || !stars) {
     return {
       statusCode: 400,
@@ -51,7 +46,6 @@ exports.handler = async (event) => {
     };
   }
 
-  // Validate environment variables
   const adminApiAccessToken = process.env.ADMIN_API_ACCESS_TOKEN;
   const shop = process.env.SHOP;
 
@@ -64,25 +58,20 @@ exports.handler = async (event) => {
   }
 
   try {
-    // Fetch existing reviews
     const existingReviews = await fetchReviews(productId, shop, adminApiAccessToken);
-
-    // Append new review
     const updatedReviews = [
       ...(existingReviews || []),
       {
         name,
         text,
-        stars: parseInt(stars, 10), // Ensure stars is a number
+        stars: parseInt(stars, 10),
         status: 'pending',
         date: new Date().toISOString(),
       },
     ];
 
-    // Update reviews in Shopify metafield
     const updateResult = await updateReviews(productId, updatedReviews, shop, adminApiAccessToken);
 
-    // Check for Shopify GraphQL user errors
     if (updateResult?.data?.metafieldUpsert?.userErrors?.length > 0) {
       return {
         statusCode: 500,
@@ -106,7 +95,7 @@ exports.handler = async (event) => {
   }
 };
 
-// Fetch existing reviews from Shopify product metafield
+// Fetch existing reviews
 async function fetchReviews(productId, shop, token) {
   const query = `
     query {
@@ -138,7 +127,7 @@ async function fetchReviews(productId, shop, token) {
   return metafield?.value ? JSON.parse(metafield.value) : [];
 }
 
-// Update reviews in Shopify product metafield
+// Update reviews
 async function updateReviews(productId, reviews, shop, token) {
   const query = `
     mutation metafieldUpsert($input: MetafieldInput!) {
@@ -168,7 +157,7 @@ async function updateReviews(productId, reviews, shop, token) {
     },
   };
 
-  const response = await fetch(`https://${shop}/admin/api/${shopifyApiVersion}/graphql.json`, {
+  const response = await fetch(`https://[${shop}](mailto:shop)/admin/api/${shopifyApiVersion}/graphql.json`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
