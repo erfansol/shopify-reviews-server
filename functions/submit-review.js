@@ -101,7 +101,7 @@ export const handler = async (event) => {
 // CORS headers function
 function corsHeaders() {
   return {
-    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Origin': allowedOrigin, // Make sure this is set to the correct allowed origin
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
   };
