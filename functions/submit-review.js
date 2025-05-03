@@ -13,11 +13,11 @@ const sanitizeInput = (input) => {
   if (typeof input !== 'string') return input;
   return input
     .replace(/[<>"'&]/g, (match) => ({
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&apos;',
-      '&': '&amp;'
+      '<': '<',
+      '>': '>',
+      '"': '"',
+      "'": ''',
+      '&': '&'
     }[match]))
     .trim();
 };
