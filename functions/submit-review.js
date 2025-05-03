@@ -251,3 +251,41 @@ async function updateReviews(productId, reviews, shop, token) {
     throw error;
   }
 }
+const fetch = require('node-fetch');
+
+exports.handler = async (event) => {
+  try {
+    const { productId, name, text, stars, recaptchaResponse } = JSON.parse(event.body);
+
+    if (!productId || !name || !text || !stars || !recaptchaResponse) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ error: 'Missing required fields' }),
+      };
+    }
+
+    // Verify reCAPTCHA
+    const recaptchaSecret = process.env.RECAPTCHA_SECRET_KEY;
+    const recaptchaVerifyUrl = `https://www.google.com/recaptcha/api/siteverify?secret=${recaptchaSecret}&response=${recaptchaResponse}`;
+    const recaptchaResult = await fetch(recaptchaVerifyUrl, { method: 'POST' });
+    const recaptchaData = await recaptchaResult.json();
+
+    if (!recaptchaData.success) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ error: 'reCAPTCHA verification failed' }),
+      };
+    }
+
+    // Simulate storing review (replace with Shopify API call in production)
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ message: 'Review submitted successfully' }),
+    };
+  } catch (error) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: error.message }),
+    };
+  }
+};
