@@ -13,11 +13,11 @@ const sanitizeInput = (input) => {
   if (typeof input !== 'string') return input;
   return input
     .replace(/[<>"'&]/g, (match) => ({
-      '<': '<',
-      '>': '>',
-      '"': '"',
-      "'": ''',
-      '&': '&'
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&apos;',
+      '&': '&amp;'
     }[match]))
     .trim();
 };
@@ -104,32 +104,28 @@ exports.handler = async (event, context) => {
     };
   }
 
-  // Verify reCAPTCHA v3
-  console.log('Verifying reCAPTCHA v3');
+  // Verify reCAPTCHA v2 Checkbox
+  console.log('Verifying reCAPTCHA v2 Checkbox');
   const recaptchaVerifyUrl = `https://www.google.com/recaptcha/api/siteverify?secret=${recaptchaSecret}&response=${recaptchaResponse}`;
   try {
     const recaptchaResult = await fetch(recaptchaVerifyUrl, { method: 'POST' });
     const recaptchaData = await recaptchaResult.json();
-    console.log('reCAPTCHA v3 verification result:', recaptchaData);
+    console.log('reCAPTCHA v2 verification result:', recaptchaData);
 
-    if (!recaptchaData.success || recaptchaData.score < 0.5) {
-      console.log('reCAPTCHA v3 verification failed:', {
-        success: recaptchaData.success,
-        score: recaptchaData.score,
-        errors: recaptchaData['error-codes']
-      });
+    if (!recaptchaData.success) {
+      console.log('reCAPTCHA v2 verification failed:', { success: recaptchaData.success, errors: recaptchaData['error-codes'] });
       return {
         statusCode: 400,
         headers: corsHeaders,
         body: JSON.stringify({
           error: 'reCAPTCHA verification failed',
-          details: recaptchaData['error-codes'] || `Score too low: ${recaptchaData.score}`
+          details: recaptchaData['error-codes'] || 'Invalid reCAPTCHA response'
         })
       };
     }
-    console.log('reCAPTCHA v3 score:', recaptchaData.score);
+    console.log('reCAPTCHA v2 verification successful');
   } catch (error) {
-    console.error('reCAPTCHA v3 verification error:', error.message);
+    console.error('reCAPTCHA v2 verification error:', error.message);
     return {
       statusCode: 500,
       headers: corsHeaders,
