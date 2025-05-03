@@ -6,16 +6,16 @@ const recaptchaSecret = process.env.RECAPTCHA_SECRET_KEY;
 const adminApiAccessToken = process.env.ADMIN_API_ACCESS_TOKEN;
 const shop = process.env.SHOP;
 
-// Basic input sanitization to reduce XSS risks
+// Basic input sanitization
 const sanitizeInput = (input) => {
   if (typeof input !== 'string') return input;
   return input
     .replace(/[<>"'&]/g, (match) => ({
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#x27;',
-      '&': '&amp;',
+      '<': '<',
+      '>': '>',
+      '"': '"',
+      "'": ''',
+      '&': '&',
     }[match]))
     .trim();
 };
@@ -29,7 +29,6 @@ exports.handler = async (event, context) => {
     'Access-Control-Allow-Headers': 'Content-Type',
   };
 
-  // Handle OPTIONS request for CORS preflight
   if (event.httpMethod === 'OPTIONS') {
     console.log('Returning OPTIONS response');
     return {
@@ -39,7 +38,6 @@ exports.handler = async (event, context) => {
     };
   }
 
-  // Allow only POST requests
   if (event.httpMethod !== 'POST') {
     console.log('Invalid method:', event.httpMethod);
     return {
@@ -49,7 +47,6 @@ exports.handler = async (event, context) => {
     };
   }
 
-  // Parse request body
   let payload;
   try {
     console.log('Parsing request body:', event.body);
@@ -66,7 +63,6 @@ exports.handler = async (event, context) => {
   const { productId, name, text, stars, recaptchaResponse } = payload;
   console.log('Parsed payload:', { productId, name, text, stars, recaptchaResponse });
 
-  // Validate required fields
   if (!productId || !name || !text || !stars || !recaptchaResponse) {
     console.log('Missing required fields:', { productId, name, text, stars, recaptchaResponse });
     return {
@@ -76,7 +72,6 @@ exports.handler = async (event, context) => {
     };
   }
 
-  // Validate stars
   const starsNum = parseInt(stars, 10);
   if (isNaN(starsNum) || starsNum < 1 || starsNum > 5) {
     console.log('Invalid stars value:', stars);
@@ -87,7 +82,6 @@ exports.handler = async (event, context) => {
     };
   }
 
-  // Validate environment variables
   if (!adminApiAccessToken || !shop || !recaptchaSecret) {
     console.error('Missing environment variables:', {
       hasShop: !!shop,
@@ -101,24 +95,32 @@ exports.handler = async (event, context) => {
     };
   }
 
-  // Verify reCAPTCHA
-  console.log('Verifying reCAPTCHA');
+  // Verify reCAPTCHA v3
+  console.log('Verifying reCAPTCHA v3');
   const recaptchaVerifyUrl = `https://www.google.com/recaptcha/api/siteverify?secret=${recaptchaSecret}&response=${recaptchaResponse}`;
   try {
     const recaptchaResult = await fetch(recaptchaVerifyUrl, { method: 'POST' });
     const recaptchaData = await recaptchaResult.json();
-    console.log('reCAPTCHA verification result:', recaptchaData);
+    console.log('reCAPTCHA v3 verification result:', recaptchaData);
 
-    if (!recaptchaData.success) {
-      console.log('reCAPTCHA verification failed:', recaptchaData['error-codes']);
+    if (!recaptchaData.success || recaptchaData.score < 0.5) {
+      console.log('reCAPTCHA v3 verification failed:', {
+        success: recaptchaData.success,
+        score: recaptchaData.score,
+        errors: recaptchaData['error-codes'],
+      });
       return {
         statusCode: 400,
         headers: corsHeaders,
-        body: JSON.stringify({ error: 'reCAPTCHA verification failed', details: recaptchaData['error-codes'] }),
+        body: JSON.stringify({
+          error: 'reCAPTCHA verification failed',
+          details: recaptchaData['error-codes'] || `Score too low: ${recaptchaData.score}`,
+        }),
       };
     }
+    console.log('reCAPTCHA v3 score:', recaptchaData.score);
   } catch (error) {
-    console.error('reCAPTCHA verification error:', error.message);
+    console.error('reCAPTCHA v3 verification error:', error.message);
     return {
       statusCode: 500,
       headers: corsHeaders,
@@ -126,7 +128,6 @@ exports.handler = async (event, context) => {
     };
   }
 
-  // Sanitize inputs
   const sanitizedName = sanitizeInput(name);
   const sanitizedText = sanitizeInput(text);
   console.log('Sanitized inputs:', { sanitizedName, sanitizedText });
@@ -150,7 +151,6 @@ exports.handler = async (event, context) => {
     console.log('Updating reviews:', updatedReviews);
     const updateResult = await updateReviews(productId, updatedReviews, shop, adminApiAccessToken);
 
-    // Check for GraphQL errors or userErrors
     if (updateResult.errors?.length > 0) {
       console.error('GraphQL errors:', updateResult.errors);
       return {
@@ -195,7 +195,6 @@ exports.handler = async (event, context) => {
 
 // Fetch existing reviews
 async function fetchReviews(productId, shop, token) {
-  // Validate productId format
   if (!productId.match(/^\d+$/)) {
     throw new Error('Invalid productId format');
   }
@@ -247,7 +246,6 @@ async function fetchReviews(productId, shop, token) {
 
 // Update reviews using metafieldsSet
 async function updateReviews(productId, reviews, shop, token) {
-  // Validate productId format
   if (!productId.match(/^\d+$/)) {
     throw new Error('Invalid productId format');
   }
