@@ -1,6 +1,3 @@
-// Import node-fetch (CommonJS version)
-const fetch = require('node-fetch');
-
 // Environment variables
 const allowedOrigin = process.env.ALLOWED_ORIGIN || 'https://mamamary.io';
 const shopifyApiVersion = process.env.SHOPIFY_API_VERSION || '2024-10';
@@ -24,6 +21,9 @@ const sanitizeInput = (input) => {
 
 // Main handler
 exports.handler = async (event, context) => {
+  // Dynamic import for node-fetch ESM
+  const { default: fetch } = await import('node-fetch');
+
   console.log('Function invoked:', { method: event.httpMethod, body: event.body });
 
   const corsHeaders = {
@@ -205,6 +205,8 @@ async function fetchReviews(productId, shop, token) {
     throw new Error('Invalid productId format');
   }
 
+  const { default: fetch } = await import('node-fetch');
+
   const query = `
     query {
       product(id: "gid://shopify/Product/${productId}") {
@@ -255,6 +257,8 @@ async function updateReviews(productId, reviews, shop, token) {
   if (!productId.match(/^\d+$/)) {
     throw new Error('Invalid productId format');
   }
+
+  const { default: fetch } = await import('node-fetch');
 
   const query = `
     mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) {
