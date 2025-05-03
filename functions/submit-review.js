@@ -1,4 +1,4 @@
-// Import node-fetch for HTTP requests
+// Import node-fetch (CommonJS version)
 const fetch = require('node-fetch');
 
 // Environment variables
@@ -320,4 +320,4 @@ async function updateReviews(productId, reviews, shop, token) {
     });
     throw error;
   }
-};
+}
