@@ -1,23 +1,6 @@
-const fetch = require('node-fetch');
-
+// netlify/functions/submit-review.js
 const allowedOrigin = process.env.ALLOWED_ORIGIN || 'https://mamamary.io';
-const shopifyApiVersion = process.env.SHOPIFY_API_VERSION || '2024-10';
-const recaptchaSecret = process.env.RECAPTCHA_SECRET_KEY;
-const adminApiAccessToken = process.env.ADMIN_API_ACCESS_TOKEN;
-const shop = process.env.SHOP;
-
-const sanitizeInput = (input) => {
-  if (typeof input !== 'string') return input;
-  return input
-    .replace(/[<>"'&]/g, (match) => ({
-      '<': '<',
-      '>': '>',
-      '"': '"',
-      "'": ''',
-      '&': '&'
-    }[match]))
-    .trim();
-};
+const shopifyApiVersion = '2024-10';
 
 exports.handler = async (event, context) => {
   console.log('Function invoked:', { method: event.httpMethod, body: event.body });
@@ -25,27 +8,30 @@ exports.handler = async (event, context) => {
   const corsHeaders = {
     'Access-Control-Allow-Origin': allowedOrigin,
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type'
+    'Access-Control-Allow-Headers': 'Content-Type',
   };
 
+  // Handle OPTIONS request for CORS preflight
   if (event.httpMethod === 'OPTIONS') {
     console.log('Returning OPTIONS response');
     return {
       statusCode: 204,
       headers: corsHeaders,
-      body: ''
+      body: '',
     };
   }
 
+  // Allow only POST requests
   if (event.httpMethod !== 'POST') {
     console.log('Invalid method:', event.httpMethod);
     return {
       statusCode: 405,
       headers: corsHeaders,
-      body: JSON.stringify({ error: 'Method Not Allowed' })
+      body: JSON.stringify({ error: 'Method Not Allowed' }),
     };
   }
 
+  // Parse request body
   let payload;
   try {
     console.log('Parsing request body:', event.body);
@@ -55,76 +41,43 @@ exports.handler = async (event, context) => {
     return {
       statusCode: 400,
       headers: corsHeaders,
-      body: JSON.stringify({ error: 'Invalid JSON body', details: error.message })
+      body: JSON.stringify({ error: 'Invalid JSON body', details: error.message }),
     };
   }
 
-  const { productId, name, text, stars, recaptchaResponse } = payload;
-  console.log('Parsed payload:', { productId, name, text, stars, recaptchaResponse });
+  const { productId, name, text, stars } = payload;
+  console.log('Parsed payload:', { productId, name, text, stars });
 
-  if (!productId || !name || !text || !stars || !recaptchaResponse) {
-    console.log('Missing required fields:', { productId, name, text, stars, recaptchaResponse });
+  // Validate required fields
+  if (!productId || !name || !text || !stars) {
+    console.log('Missing required fields:', { productId, name, text, stars });
     return {
       statusCode: 400,
       headers: corsHeaders,
-      body: JSON.stringify({ error: 'Missing required fields' })
+      body: JSON.stringify({ error: 'Missing required fields' }),
     };
   }
 
-  const starsNum = parseInt(stars, 10);
-  if (isNaN(starsNum) || starsNum < 1 || starsNum > 5) {
-    console.log('Invalid stars value:', stars);
-    return {
-      statusCode: 400,
-      headers: corsHeaders,
-      body: JSON.stringify({ error: 'Stars must be a number between 1 and 5' })
-    };
-  }
+  // Validate environment variables
+  const adminApiAccessToken = process.env.ADMIN_API_ACCESS_TOKEN;
+  const shop = process.env.SHOP;
+  console.log('Environment variables:', {
+    shop,
+    hasToken: !!adminApiAccessToken,
+    allowedOrigin,
+  });
 
-  if (!adminApiAccessToken || !shop || !recaptchaSecret) {
+  if (!adminApiAccessToken || !shop) {
     console.error('Missing environment variables:', {
       hasShop: !!shop,
       hasToken: !!adminApiAccessToken,
-      hasRecaptchaSecret: !!recaptchaSecret
     });
     return {
       statusCode: 500,
       headers: corsHeaders,
-      body: JSON.stringify({ error: 'Server misconfiguration: Missing environment variables' })
+      body: JSON.stringify({ error: 'Server misconfiguration: Missing environment variables' }),
     };
   }
-
-  console.log('Verifying reCAPTCHA v2 Checkbox');
-  const recaptchaVerifyUrl = `https://www.google.com/recaptcha/api/siteverify?secret=${recaptchaSecret}&response=${recaptchaResponse}`;
-  try {
-    const recaptchaResult = await fetch(recaptchaVerifyUrl, { method: 'POST' });
-    const recaptchaData = await recaptchaResult.json();
-    console.log('reCAPTCHA v2 verification result:', recaptchaData);
-
-    if (!recaptchaData.success) {
-      console.log('reCAPTCHA v2 verification failed:', { success: recaptchaData.success, errors: recaptchaData['error-codes'] });
-      return {
-        statusCode: 400,
-        headers: corsHeaders,
-        body: JSON.stringify({
-          error: 'reCAPTCHA verification failed',
-          details: recaptchaData['error-codes'] || 'Invalid reCAPTCHA response'
-        })
-      };
-    }
-    console.log('reCAPTCHA v2 verification successful');
-  } catch (error) {
-    console.error('reCAPTCHA v2 verification error:', error.message);
-    return {
-      statusCode: 500,
-      headers: corsHeaders,
-      body: JSON.stringify({ error: 'Failed to verify reCAPTCHA', details: error.message })
-    };
-  }
-
-  const sanitizedName = sanitizeInput(name);
-  const sanitizedText = sanitizeInput(text);
-  console.log('Sanitized inputs:', { sanitizedName, sanitizedText });
 
   try {
     console.log('Fetching reviews for productId:', productId);
@@ -134,23 +87,24 @@ exports.handler = async (event, context) => {
     const updatedReviews = [
       ...(existingReviews || []),
       {
-        name: sanitizedName,
-        text: sanitizedText,
-        stars: starsNum,
+        name,
+        text,
+        stars: parseInt(stars, 10),
         status: 'pending',
-        date: new Date().toISOString()
-      }
+        date: new Date().toISOString(),
+      },
     ];
 
     console.log('Updating reviews:', updatedReviews);
     const updateResult = await updateReviews(productId, updatedReviews, shop, adminApiAccessToken);
 
+    // Check for GraphQL errors or userErrors
     if (updateResult.errors?.length > 0) {
       console.error('GraphQL errors:', updateResult.errors);
       return {
         statusCode: 500,
         headers: corsHeaders,
-        body: JSON.stringify({ error: 'Failed to update reviews', details: updateResult.errors })
+        body: JSON.stringify({ error: 'Failed to update reviews', details: updateResult.errors }),
       };
     }
     if (updateResult.data?.metafieldsSet?.userErrors?.length > 0) {
@@ -160,8 +114,8 @@ exports.handler = async (event, context) => {
         headers: corsHeaders,
         body: JSON.stringify({
           error: 'Failed to update reviews',
-          details: updateResult.data.metafieldsSet.userErrors
-        })
+          details: updateResult.data.metafieldsSet.userErrors,
+        }),
       };
     }
 
@@ -169,29 +123,26 @@ exports.handler = async (event, context) => {
     return {
       statusCode: 200,
       headers: corsHeaders,
-      body: JSON.stringify({ message: 'Review submitted successfully' })
+      body: JSON.stringify({ message: 'Review submitted successfully' }),
     };
   } catch (error) {
     console.error('Error in submit-review:', {
       message: error.message,
-      stack: error.stack
+      stack: error.stack,
     });
     return {
       statusCode: 500,
       headers: corsHeaders,
       body: JSON.stringify({
         error: 'An unexpected error occurred',
-        details: error.message
-      })
+        details: error.message,
+      }),
     };
   }
 };
 
+// Fetch existing reviews
 async function fetchReviews(productId, shop, token) {
-  if (!productId.match(/^\d+$/)) {
-    throw new Error('Invalid productId format');
-  }
-
   const query = `
     query {
       product(id: "gid://shopify/Product/${productId}") {
@@ -211,9 +162,9 @@ async function fetchReviews(productId, shop, token) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Shopify-Access-Token': token
+        'X-Shopify-Access-Token': token,
       },
-      body: JSON.stringify({ query })
+      body: JSON.stringify({ query }),
     });
 
     console.log('Fetch reviews response status:', response.status);
@@ -231,17 +182,14 @@ async function fetchReviews(productId, shop, token) {
   } catch (error) {
     console.error('Error fetching reviews:', {
       message: error.message,
-      stack: error.stack
+      stack: error.stack,
     });
     throw error;
   }
 }
 
+// Update reviews using metafieldsSet
 async function updateReviews(productId, reviews, shop, token) {
-  if (!productId.match(/^\d+$/)) {
-    throw new Error('Invalid productId format');
-  }
-
   const query = `
     mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) {
       metafieldsSet(metafields: $metafields) {
@@ -267,9 +215,9 @@ async function updateReviews(productId, reviews, shop, token) {
         key: 'reviews',
         ownerId: `gid://shopify/Product/${productId}`,
         type: 'json',
-        value: JSON.stringify(reviews)
-      }
-    ]
+        value: JSON.stringify(reviews),
+      },
+    ],
   };
 
   console.log('Updating reviews to:', `https://${shop}/admin/api/${shopifyApiVersion}/graphql.json`);
@@ -280,9 +228,9 @@ async function updateReviews(productId, reviews, shop, token) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Shopify-Access-Token': token
+        'X-Shopify-Access-Token': token,
       },
-      body: JSON.stringify({ query, variables })
+      body: JSON.stringify({ query, variables }),
     });
 
     console.log('Update reviews response status:', response.status);
@@ -298,7 +246,7 @@ async function updateReviews(productId, reviews, shop, token) {
   } catch (error) {
     console.error('Error updating reviews:', {
       message: error.message,
-      stack: error.stack
+      stack: error.stack,
     });
     throw error;
   }
